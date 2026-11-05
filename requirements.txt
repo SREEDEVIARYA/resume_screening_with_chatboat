@@ -1,0 +1,11 @@
+Flask
+gunicorn
+Werkzeug
+pandas
+numpy
+scikit-learn
+PyPDF2
+pdfplumber
+sentence-transformers
+transformers
+torch
