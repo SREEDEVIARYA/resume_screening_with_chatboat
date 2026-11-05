@@ -1,3 +1,4 @@
+
 import os
 import uuid
 
@@ -11,10 +12,6 @@ from flask import (
 
 from werkzeug.utils import secure_filename
 
-from agents.orchestrator import RecruitmentOrchestrator
-
-from chatbot.chatbot_engine import RecruitmentChatbot
-
 
 # ==================================
 # 1. FLASK CONFIGURATION
@@ -22,20 +19,49 @@ from chatbot.chatbot_engine import RecruitmentChatbot
 
 app = Flask(__name__)
 
-app.secret_key = "resume_screening_secret_key"
+app.secret_key = os.environ.get(
+    "SECRET_KEY",
+    "change-this-secret-key"
+)
 
 app.config["UPLOAD_FOLDER"] = "uploads"
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
 
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 
 # ==================================
-# 2. INITIALIZE AI AGENTS
+# 2. LAZY AI INITIALIZATION
 # ==================================
 
-orchestrator = RecruitmentOrchestrator()
+orchestrator = None
+chatbot = None
 
-chatbot = RecruitmentChatbot()
+
+def get_orchestrator():
+
+    global orchestrator
+
+    if orchestrator is None:
+
+        from agents.orchestrator import RecruitmentOrchestrator
+
+        orchestrator = RecruitmentOrchestrator()
+
+    return orchestrator
+
+
+def get_chatbot():
+
+    global chatbot
+
+    if chatbot is None:
+
+        from chatbot.chatbot_engine import RecruitmentChatbot
+
+        chatbot = RecruitmentChatbot()
+
+    return chatbot
 
 
 # Temporary storage for candidate results
@@ -65,66 +91,69 @@ def screen():
 
     files = request.files.getlist("resumes")
 
-    if not job_description or not any(
-        file.filename for file in files
-    ):
+    valid_files = [
+        file for file in files
+        if file.filename and file.filename.lower().endswith(".pdf")
+    ]
 
-        return "Please enter a job description and upload resumes."
+    if not job_description or not valid_files:
+
+        return "Please enter a job description and upload PDF resumes."
 
     resume_paths = []
 
-    for file in files:
+    try:
 
-        if not file.filename.lower().endswith(".pdf"):
-            continue
+        for file in valid_files:
 
-        # Generate unique filename
-        filename = secure_filename(file.filename)
+            filename = secure_filename(file.filename)
 
-        unique_filename = (
-            str(uuid.uuid4()) + "_" + filename
+            unique_filename = (
+                str(uuid.uuid4()) + "_" + filename
+            )
+
+            path = os.path.join(
+                app.config["UPLOAD_FOLDER"],
+                unique_filename
+            )
+
+            file.save(path)
+
+            resume_paths.append(path)
+
+        # Initialize agents only when screening is requested
+        ai_orchestrator = get_orchestrator()
+
+        results = ai_orchestrator.run(
+            resume_paths,
+            job_description
         )
 
-        path = os.path.join(
-            app.config["UPLOAD_FOLDER"],
-            unique_filename
+        screening_id = str(uuid.uuid4())
+
+        SCREENING_STORE[screening_id] = results
+
+        session["screening_id"] = screening_id
+
+        return render_template(
+            "results.html",
+            results=results
         )
 
-        file.save(path)
+    except Exception as e:
 
-        resume_paths.append(path)
+        app.logger.exception("Resume screening failed")
 
-    if not resume_paths:
+        return "Resume screening failed. Please check the server logs.", 500
 
-        return "Please upload at least one valid PDF resume."
+    finally:
 
-    # ==================================
-    # START MULTI-AGENT WORKFLOW
-    # ==================================
+        # Remove temporary uploaded PDF files after processing
+        for path in resume_paths:
 
-    results = orchestrator.run(
-        resume_paths,
-        job_description
-    )
+            if os.path.exists(path):
 
-    # ==================================
-    # STORE SCREENING RESULTS
-    # ==================================
-
-    screening_id = str(uuid.uuid4())
-
-    SCREENING_STORE[screening_id] = results
-
-    session["screening_id"] = screening_id
-
-    # ==================================
-    # DISPLAY RESULTS
-    # ==================================
-
-    return render_template(
-        "results.html",
-        results=results
-    )
+                os.remove(path)
 
 
 # ==================================
@@ -160,7 +189,6 @@ def chat_api():
             "error": "Please enter a message."
         }), 400
 
-    # Get current screening session
     screening_id = session.get("screening_id")
 
     if not screening_id or screening_id not in SCREENING_STORE:
@@ -169,27 +197,48 @@ def chat_api():
             "error": "Please upload resumes and complete screening first."
         }), 400
 
-    # Get candidate information
-    candidates = SCREENING_STORE[screening_id]
+    try:
 
-    # Generate chatbot response
-    response = chatbot.get_response(
-        message,
-        candidates
-    )
+        candidates = SCREENING_STORE[screening_id]
 
-    return jsonify({
-        "response": response
-    })
+        # Initialize chatbot only when chat is requested
+        ai_chatbot = get_chatbot()
+
+        response = ai_chatbot.get_response(
+            message,
+            candidates
+        )
+
+        return jsonify({
+            "response": response
+        })
+
+    except Exception:
+
+        app.logger.exception("Chatbot request failed")
+
+        return jsonify({
+            "error": "Unable to generate response. Please try again."
+        }), 500
 
 
 # ==================================
-# 7. RUN APPLICATION
+# 7. ERROR HANDLING
+# ==================================
+
+@app.errorhandler(413)
+def file_too_large(error):
+
+    return "Uploaded files exceed the 50 MB limit.", 413
+
+
+# ==================================
+# 8. LOCAL DEVELOPMENT
 # ==================================
 
 if __name__ == "__main__":
 
     app.run(
-        debug=True,
+        debug=False,
         port=5000
     )
