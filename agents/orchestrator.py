@@ -1,32 +1,73 @@
-from agents.resume_parser_agent import ResumeParserAgent
-from agents.candidate_profile_agent import CandidateProfileAgent
-from agents.skill_extraction_agent import SkillExtractionAgent
-from agents.job_analyzer_agent import JobAnalyzerAgent
-from agents.semantic_matching_agent import SemanticMatchingAgent
-from agents.scoring_agent import ScoringAgent
-from agents.ranking_agent import RankingAgent
-from agents.recommendation_agent import RecommendationAgent
-
 
 class RecruitmentOrchestrator:
 
     def __init__(self):
 
-        self.parser = ResumeParserAgent()
+        # Lightweight initialization only
+        self._parser = None
+        self._profile = None
+        self._skill_agent = None
+        self._job_agent = None
+        self._semantic_agent = None
+        self._scoring_agent = None
+        self._ranking_agent = None
+        self._recommendation_agent = None
 
-        self.profile = CandidateProfileAgent()
+    @property
+    def parser(self):
+        if self._parser is None:
+            from agents.resume_parser_agent import ResumeParserAgent
+            self._parser = ResumeParserAgent()
+        return self._parser
 
-        self.skill_agent = SkillExtractionAgent()
+    @property
+    def profile(self):
+        if self._profile is None:
+            from agents.candidate_profile_agent import CandidateProfileAgent
+            self._profile = CandidateProfileAgent()
+        return self._profile
 
-        self.job_agent = JobAnalyzerAgent()
+    @property
+    def skill_agent(self):
+        if self._skill_agent is None:
+            from agents.skill_extraction_agent import SkillExtractionAgent
+            self._skill_agent = SkillExtractionAgent()
+        return self._skill_agent
 
-        self.semantic_agent = SemanticMatchingAgent()
+    @property
+    def job_agent(self):
+        if self._job_agent is None:
+            from agents.job_analyzer_agent import JobAnalyzerAgent
+            self._job_agent = JobAnalyzerAgent()
+        return self._job_agent
 
-        self.scoring_agent = ScoringAgent()
+    @property
+    def semantic_agent(self):
+        if self._semantic_agent is None:
+            from agents.semantic_matching_agent import SemanticMatchingAgent
+            self._semantic_agent = SemanticMatchingAgent()
+        return self._semantic_agent
 
-        self.ranking_agent = RankingAgent()
+    @property
+    def scoring_agent(self):
+        if self._scoring_agent is None:
+            from agents.scoring_agent import ScoringAgent
+            self._scoring_agent = ScoringAgent()
+        return self._scoring_agent
 
-        self.recommendation_agent = RecommendationAgent()
+    @property
+    def ranking_agent(self):
+        if self._ranking_agent is None:
+            from agents.ranking_agent import RankingAgent
+            self._ranking_agent = RankingAgent()
+        return self._ranking_agent
+
+    @property
+    def recommendation_agent(self):
+        if self._recommendation_agent is None:
+            from agents.recommendation_agent import RecommendationAgent
+            self._recommendation_agent = RecommendationAgent()
+        return self._recommendation_agent
 
     def run(self, resume_files, job_description):
 
@@ -44,24 +85,19 @@ class RecruitmentOrchestrator:
 
             print("Processing:", pdf_path)
 
-            # Resume Parser Agent
             resume_text = self.parser.run(pdf_path)
 
-            # Candidate Profile Agent
             profile_data = self.profile.run(resume_text)
 
-            # Skill Extraction Agent
             candidate_skills = self.skill_agent.run(
                 resume_text
             )
 
-            # Semantic Matching Agent
             semantic_score = self.semantic_agent.run(
                 resume_text,
                 job_description
             )
 
-            # Scoring Agent
             scores = self.scoring_agent.run(
                 candidate_skills,
                 required_skills,
